@@ -1,4 +1,3 @@
-// server.js (upgraded to handle missing mods.json blob by creating it on first use)
 const express = require('express');
 const multer = require('multer');
 const path = require('path');
@@ -23,7 +22,7 @@ async function loadMods() {
     if (!metadataBlob) {
       // Create empty mods.json if it doesn't exist
       await put(METADATA_PATH, JSON.stringify([], null, 2), { access: 'public' });
-      console.log('Created empty mods.json in Blob');
+      console.log('Created empty mods.json in Blob at:', `https://n4fdh4z6chrtgbnv.public/${METADATA_PATH}`);
       return [];
     }
     const response = await fetch(metadataBlob.url);
