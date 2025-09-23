@@ -1,3 +1,4 @@
+// server.js (upgraded to handle missing mods.json blob by creating it on first use)
 const express = require('express');
 const multer = require('multer');
 const path = require('path');
@@ -19,9 +20,14 @@ app.use((req, res, next) => {
 async function loadMods() {
   try {
     const metadataBlob = await head(METADATA_PATH);
-    if (!metadataBlob) return [];
+    if (!metadataBlob) {
+      // Create empty mods.json if it doesn't exist
+      await put(METADATA_PATH, JSON.stringify([], null, 2), { access: 'public' });
+      console.log('Created empty mods.json in Blob');
+      return [];
+    }
     const response = await fetch(metadataBlob.url);
-    if (!response.ok) throw new Error('Failed to fetch metadata');
+    if (!response.ok) throw new Error('Failed to fetch metadata: ' + response.statusText);
     const text = await response.text();
     return JSON.parse(text);
   } catch (err) {
@@ -32,8 +38,9 @@ async function loadMods() {
 
 async function saveMods(mods) {
   try {
-    await put(METADATA_PATH, JSON.stringify(mods, null, 2), { access: 'public' });
-    console.log('Mods saved successfully to Blob');
+    const result = await put(METADATA_PATH, JSON.stringify(mods, null, 2), { access: 'public' });
+    console.log('Mods saved successfully to:', result.url);
+    return result;
   } catch (err) {
     console.error('Error saving mods:', err.message);
     throw err;
@@ -44,6 +51,7 @@ app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.ht
 app.get('/admin', (req, res) => res.sendFile(path.join(__dirname, 'public', 'admin.html')));
 app.get('/mods', async (req, res) => {
   const mods = await loadMods();
+  console.log('Fetched mods:', mods); // Debug log
   res.json(mods);
 });
 app.get('/view/:pathname', (req, res) => res.sendFile(path.join(__dirname, 'public', 'view.html')));
@@ -67,7 +75,7 @@ app.post('/upload', upload.single('file'), async (req, res) => {
 
   try {
     const blob = await put(req.file.originalname, req.file.buffer, { access: 'public', addRandomSuffix: true });
-    const mods = await loadMods();
+    const mods = await loadMods(); // This will create mods.json if missing
     mods.push({ name, description, pathname: blob.pathname, url: blob.url, downloadUrl: blob.downloadUrl });
     await saveMods(mods);
     res.json({ message: 'Mod uploaded successfully' });
