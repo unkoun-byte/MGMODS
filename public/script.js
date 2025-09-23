@@ -1,24 +1,33 @@
+// public/script.js (upgraded with improved fetch error handling, debug logs, and 'no mods' message)
 document.addEventListener('DOMContentLoaded', () => {
   const modList = document.getElementById('mod-list');
   const searchInput = document.getElementById('search');
 
   function fetchMods() {
     fetch('/mods')
-      .then(response => response.json())
+      .then(response => {
+        if (!response.ok) throw new Error('Network response was not ok ' + response.statusText);
+        return response.json();
+      })
       .then(mods => {
+        console.log('Mods received:', mods); // Debug log
         modList.innerHTML = '';
-        mods.forEach(mod => {
-          const card = document.createElement('div');
-          card.classList.add('mod-card');
-          card.innerHTML = `
-            <h3>${mod.name}</h3>
-            <p>${mod.description}</p>
-          `;
-          card.addEventListener('click', () => {
-            window.location.href = `/view/${encodeURIComponent(mod.pathname)}`; // Use pathname
+        if (mods.length === 0) {
+          modList.innerHTML = '<p>No mods available</p>';
+        } else {
+          mods.forEach(mod => {
+            const card = document.createElement('div');
+            card.classList.add('mod-card');
+            card.innerHTML = `
+              <h3>${mod.name}</h3>
+              <p>${mod.description}</p>
+            `;
+            card.addEventListener('click', () => {
+              window.location.href = `/view/${encodeURIComponent(mod.pathname)}`;
+            });
+            modList.appendChild(card);
           });
-          modList.appendChild(card);
-        });
+        }
       })
       .catch(error => console.error('Error fetching mods:', error));
   }
