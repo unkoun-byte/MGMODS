@@ -1,28 +1,22 @@
 const express = require('express');
 const multer = require('multer');
 const path = require('path');
-const fs = require('fs').promises;
-const fsSync = require('fs');
-const os = require('os');
 const { put, del, head } = require('@vercel/blob');
 require('dotenv').config();
 
 const app = express();
 
-// Allow configuring the metadata path via env; default to "mods.json" at repo root.
-const METADATA_PATH = process.env.METADATA_PATH || 'mods.json';
-const LOCAL_METADATA_FILE = path.join(__dirname, 'mods.json');
-const TMP_METADATA_FILE = path.join(os.tmpdir(), 'mgmods_mods.json');
+// Configure metadata path in the blob store; default to metadata/mods.json
+const METADATA_PATH = process.env.METADATA_PATH || 'metadata/mods.json';
+
+// Ensure token is set for @vercel/blob - this package looks for BLOB_READ_WRITE_TOKEN
+if (!process.env.BLOB_READ_WRITE_TOKEN) {
+  console.warn('Warning: BLOB_READ_WRITE_TOKEN not set. Blob operations will fail until you set it.');
+}
 
 const upload = multer({ storage: multer.memoryStorage() });
 
 app.use(express.static(path.join(__dirname, 'public')));
-// Serve local uploads if blob storage is not used or as a fallback
-// Serve uploads from project uploads folder if writable, and also from system tmp as fallback
-const PROJECT_UPLOADS = path.join(__dirname, 'uploads');
-const TMP_UPLOADS = path.join(os.tmpdir(), 'mgmods_uploads');
-app.use('/uploads', express.static(PROJECT_UPLOADS));
-app.use('/uploads', express.static(TMP_UPLOADS));
 app.use(express.json());
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
@@ -33,93 +27,56 @@ async function loadMods() {
   // Try loading from Vercel Blob first
   try {
     const metadataBlob = await head(METADATA_PATH);
+    if (!metadataBlob) {
+      // Create empty metadata blob
+      await put(METADATA_PATH, JSON.stringify([], null, 2), { access: 'public' });
+      console.log('Created empty metadata blob at', METADATA_PATH);
+      return [];
+    }
     if (metadataBlob && metadataBlob.url) {
       const response = await fetch(metadataBlob.url);
       if (!response.ok) throw new Error('Failed to fetch metadata: ' + response.statusText);
       const text = await response.text();
       return JSON.parse(text);
     }
-    // If head returned nothing, fallthrough to local
-    console.log('No metadata blob found at', METADATA_PATH);
   } catch (err) {
-    // Common error: "The requested blob does not exist" - fall back to local file
-    console.error('Error loading mods from blob:', err && err.message ? err.message : err);
-  }
-
-  // Fallback: load from local file system, or tmp metadata file
-  try {
-    const text = await fs.readFile(LOCAL_METADATA_FILE, 'utf8');
-    return JSON.parse(text);
-  } catch (err) {
-    if (err.code === 'ENOENT') {
-      // create empty local metadata file if possible
+    // If the blob doesn't exist, create it and return empty array.
+    const msg = err && err.message ? err.message.toString() : '';
+    if (msg.includes('requested blob does not exist') || msg.includes('BlobNotFoundError')) {
       try {
-        await fs.writeFile(LOCAL_METADATA_FILE, JSON.stringify([], null, 2), 'utf8');
-        console.log('Created local mods.json at', LOCAL_METADATA_FILE);
+        await put(METADATA_PATH, JSON.stringify([], null, 2), { access: 'public' });
+        console.log('Created empty metadata blob after missing error at', METADATA_PATH);
         return [];
       } catch (e) {
-        // fallback to tmp metadata
-        await fs.writeFile(TMP_METADATA_FILE, JSON.stringify([], null, 2), 'utf8');
-        console.log('Created tmp mods.json at', TMP_METADATA_FILE);
-        return [];
+        console.error('Failed to create empty metadata blob after missing error:', e && e.message ? e.message : e);
+        throw e;
       }
     }
-    // If reading local file failed (e.g., EROFS), try tmp metadata
-    console.error('Error reading local mods.json:', err.message || err, '- trying tmp');
-    try {
-      const text2 = await fs.readFile(TMP_METADATA_FILE, 'utf8');
-      return JSON.parse(text2);
-    } catch (e2) {
-      if (e2.code === 'ENOENT') {
-        try {
-          await fs.writeFile(TMP_METADATA_FILE, JSON.stringify([], null, 2), 'utf8');
-          console.log('Created tmp mods.json at', TMP_METADATA_FILE);
-          return [];
-        } catch (e3) {
-          console.error('Unable to create tmp mods.json:', e3 && e3.message ? e3.message : e3);
-          return [];
-        }
-      }
-      console.error('Error reading tmp mods.json:', e2 && e2.message ? e2.message : e2);
-      return [];
-    }
+    // Other errors: log and rethrow
+    console.error('Error loading mods from blob:', msg);
+    throw err;
   }
 }
 
 async function saveMods(mods) {
   const json = JSON.stringify(mods, null, 2);
-
-  // Try saving to Vercel Blob, but if that fails, keep local copy updated.
-  try {
-    const result = await put(METADATA_PATH, json, { access: 'public' });
-    console.log('Mods saved successfully to blob at:', result && result.url ? result.url : METADATA_PATH);
-  } catch (err) {
-    console.error('Error saving mods to blob:', err && err.message ? err.message : err);
-  }
-
-  // Write local copy if possible; otherwise write to tmp metadata file
-  try {
-    await fs.writeFile(LOCAL_METADATA_FILE, json, 'utf8');
-    try { fsSync.chmodSync(LOCAL_METADATA_FILE, 0o644); } catch (e) { /* ignore */ }
-    console.log('Local mods.json updated at', LOCAL_METADATA_FILE);
-  } catch (err) {
-    console.error('Error writing local mods.json (will try tmp):', err && err.message ? err.message : err);
-    try {
-      await fs.writeFile(TMP_METADATA_FILE, json, 'utf8');
-      console.log('Tmp mods.json updated at', TMP_METADATA_FILE);
-    } catch (err2) {
-      console.error('Error writing tmp mods.json:', err2 && err2.message ? err2.message : err2);
-      throw err2;
-    }
-  }
+  // Save metadata to blob (single source of truth)
+  const result = await put(METADATA_PATH, json, { access: 'public' });
+  console.log('Mods saved successfully to blob at:', result && result.url ? result.url : METADATA_PATH);
+  return result;
 }
 
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 app.get('/admin', (req, res) => res.sendFile(path.join(__dirname, 'public', 'admin.html')));
 app.get('/mods', async (req, res) => {
-  const mods = await loadMods();
-  console.log('Fetched mods:', mods); // Debug log
-  res.json(mods);
+  try {
+    const mods = await loadMods();
+    console.log('Fetched mods:', mods);
+    res.json(mods);
+  } catch (err) {
+    console.error('Failed to load mods:', err && err.message ? err.message : err);
+    res.status(500).json({ error: 'Failed to load mods from blob' });
+  }
 });
 app.get('/view/:pathname', (req, res) => res.sendFile(path.join(__dirname, 'public', 'view.html')));
 app.get('/mod/:pathname', async (req, res) => {
@@ -147,48 +104,16 @@ app.post('/upload', upload.single('file'), async (req, res) => {
 
   const mods = await loadMods(); // ensure we have the latest
 
-  // Try uploading to the blob store first
+  // Upload file to blob store (primary storage)
   try {
     const blob = await put(req.file.originalname, req.file.buffer, { access: 'public', addRandomSuffix: true });
-    mods.push({ name, description, pathname: blob.pathname, url: blob.url, downloadUrl: blob.downloadUrl });
-    await saveMods(mods);
-    return res.json({ message: 'Mod uploaded successfully (blob)', mod: mods[mods.length - 1] });
-  } catch (err) {
-    console.error('Blob upload failed, falling back to local storage:', err && err.message ? err.message : err);
-  }
-
-  // Fallback: save file locally in uploads/ and register it (try project uploads then tmp)
-  try {
-    const filename = `${Date.now()}-${req.file.originalname}`.replace(/[^a-zA-Z0-9._-]/g, '_');
-    // Ensure directories exist
-    try { await fs.mkdir(PROJECT_UPLOADS, { recursive: true }); } catch(e) { /* ignore */ }
-    try { await fs.mkdir(TMP_UPLOADS, { recursive: true }); } catch(e) { /* ignore */ }
-
-    const destPathProject = path.join(PROJECT_UPLOADS, filename);
-    let wroteTo = null;
-    try {
-      await fs.writeFile(destPathProject, req.file.buffer);
-      wroteTo = 'project';
-    } catch (err) {
-      // If write failed (e.g., EROFS), try tmp dir
-      console.error('Write to project uploads failed, falling back to tmp:', err && err.code ? err.code : err);
-      try {
-        const destPathTmp = path.join(TMP_UPLOADS, filename);
-        await fs.writeFile(destPathTmp, req.file.buffer);
-        wroteTo = 'tmp';
-      } catch (err2) {
-        console.error('Write to tmp uploads also failed:', err2 && err2.message ? err2.message : err2);
-        throw err2;
-      }
-    }
-
-    const entry = { name, description, pathname: filename, url: `/uploads/${filename}`, downloadUrl: `/uploads/${filename}` };
+    const entry = { name, description, pathname: blob.pathname, url: blob.url, downloadUrl: blob.downloadUrl };
     mods.push(entry);
     await saveMods(mods);
-    res.json({ message: `Mod uploaded successfully (local ${wroteTo})`, mod: entry });
+    return res.json({ message: 'Mod uploaded successfully (blob)', mod: entry });
   } catch (err) {
-    console.error('Local upload error:', err && err.message ? err.message : err);
-    res.status(500).json({ error: err && err.message ? err.message : String(err) });
+    console.error('Blob upload failed:', err && err.message ? err.message : err);
+    return res.status(500).json({ error: 'Blob upload failed: ' + (err && err.message ? err.message : String(err)) });
   }
 });
 
@@ -202,23 +127,18 @@ app.delete('/delete/:pathname', async (req, res) => {
     const entry = mods[index];
     // Try deleting blob (if it is a remote URL)
     try {
-      if (entry && entry.url && /^https?:\/\//i.test(entry.url)) {
-        await del(entry.url);
-        console.log('Deleted blob at', entry.url);
+      // prefer deleting by pathname if available
+      const target = entry && entry.pathname ? entry.pathname : entry.url;
+      if (target) {
+        await del(target);
+        console.log('Deleted blob at', target);
       }
     } catch (err) {
       console.error('Error deleting blob (ignored):', err && err.message ? err.message : err);
     }
 
     // If local file, remove it from uploads folder
-    try {
-      if (entry && entry.downloadUrl && entry.downloadUrl.startsWith('/uploads/')) {
-        const localPath = path.join(__dirname, entry.downloadUrl.replace(/^\/+/,'') );
-        if (fsSync.existsSync(localPath)) fsSync.unlinkSync(localPath);
-      }
-    } catch (err) {
-      console.error('Error deleting local file (ignored):', err && err.message ? err.message : err);
-    }
+    // no local files to clean in blob-only mode
 
     mods.splice(index, 1);
     await saveMods(mods);

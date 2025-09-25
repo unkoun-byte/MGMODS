@@ -10,17 +10,17 @@
     "filename": "replaymod-1.20.1-2.6.23.jar"
   },
   {
-    "name": "better Third parson",
-    "description": "1.21",
-    "pathname": "1758778702151-BetterThirdPerson-Fabric-1.21-1.9.0.jar",
-    "url": "/uploads/1758778702151-BetterThirdPerson-Fabric-1.21-1.9.0.jar",
-    "downloadUrl": "/uploads/1758778702151-BetterThirdPerson-Fabric-1.21-1.9.0.jar"
-  },
-  {
     "name": "collective",
     "description": "1.20.1",
     "pathname": "1758778844741-collective-1.20.1-8.3.jar",
     "url": "/uploads/1758778844741-collective-1.20.1-8.3.jar",
     "downloadUrl": "/uploads/1758778844741-collective-1.20.1-8.3.jar"
+  },
+  {
+    "name": "placeholder",
+    "description": "1.20.1",
+    "pathname": "1758779560864-PlaceholderAPI-2.11.6.jar",
+    "url": "/uploads/1758779560864-PlaceholderAPI-2.11.6.jar",
+    "downloadUrl": "/uploads/1758779560864-PlaceholderAPI-2.11.6.jar"
   }
 ]
