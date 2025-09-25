@@ -28,8 +28,8 @@ app.use((req, res, next) => {
 });
 
 // Simple auth config (use env vars in production)
-const ADMIN_USER = process.env.ADMIN_USER || 'admin';
-const ADMIN_PASS = process.env.ADMIN_PASS || 'password';
+const ADMIN_USER = process.env.ADMIN_USER || 'AMAANE';
+const ADMIN_PASS = process.env.ADMIN_PASS || 'Amaane3grok';
 const JWT_SECRET = process.env.JWT_SECRET || 'change-this-secret';
 const authCookieName = 'mgmods_auth';
 
@@ -127,6 +127,18 @@ app.get('/mods', async (req, res) => {
     const offset = Math.max(0, parseInt(req.query.offset || '0', 10) || 0);
 
     let mods = await loadMods();
+    // server-side category filter
+    const category = (req.query.category || '').toString().trim().toLowerCase();
+    const version = (req.query.version || '').toString().trim();
+    if (category && category !== 'all') {
+      mods = mods.filter(m => (m.category || 'mod').toString().toLowerCase() === category);
+    }
+    if (version && version !== 'all') {
+      mods = mods.filter(m => {
+        const vs = m.versions || [];
+        return vs.map(String).includes(version);
+      });
+    }
     if (q) {
       mods = mods.filter(m => {
         const hay = ((m.name || '') + ' ' + (m.description || '') + ' ' + (m.pathname || '') + ' ' + (m.filename || '')).toLowerCase();
@@ -164,6 +176,12 @@ app.get('/download/:pathname', async (req, res) => {
 app.post('/upload', ensureAuth, upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
   const { name, description } = req.body;
+  // Accept category and versions from the form
+  const category = (req.body.category || 'mod').toString();
+  const versionsInput = req.body.versions || '';
+  const versions = Array.isArray(versionsInput)
+    ? versionsInput.map(v => v.toString().trim()).filter(Boolean)
+    : versionsInput.toString().split(',').map(v => v.trim()).filter(Boolean);
   if (!name || !description) return res.status(400).json({ error: 'Name and description are required' });
 
   const mods = await loadMods(); // ensure we have the latest
@@ -171,7 +189,16 @@ app.post('/upload', ensureAuth, upload.single('file'), async (req, res) => {
   // Upload file to blob store (primary storage)
   try {
     const blob = await put(req.file.originalname, req.file.buffer, { access: 'public', addRandomSuffix: true });
-    const entry = { name, description, pathname: blob.pathname, url: blob.url, downloadUrl: blob.downloadUrl };
+    const entry = {
+      name,
+      description,
+      category,
+      versions,
+      pathname: blob.pathname,
+      url: blob.url,
+      downloadUrl: blob.downloadUrl,
+      filename: req.file.originalname
+    };
     mods.push(entry);
     await saveMods(mods); // Always updates metadata/mods.json
     return res.json({ message: 'Mod uploaded successfully (blob)', mod: entry });
