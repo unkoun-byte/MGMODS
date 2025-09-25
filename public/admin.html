@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Admin Panel - MGMODS</title>
+  <link rel="stylesheet" href="/styles.css">
   <link rel="stylesheet" href="/admin.css">
 </head>
 <body>
@@ -20,8 +21,14 @@
     <form id="upload-form">
       <input type="text" name="name" placeholder="Mod Name" required>
       <textarea name="description" placeholder="Description" required></textarea>
-      <input type="file" name="file" accept=".jar" required>
-      <button type="submit">Upload Mod</button>
+      <input type="file" name="file" id="file-input" accept=".jar" required>
+      <div class="upload-controls">
+        <button type="submit" class="btn-animated" id="upload-btn">Upload Mod</button>
+        <div class="progress-wrapper" aria-hidden="true">
+          <div class="progress-bar" id="upload-progress" style="width:0%"></div>
+          <div class="progress-text" id="upload-percent">0%</div>
+        </div>
+      </div>
     </form>
     <div id="mod-list"></div>
   </div>

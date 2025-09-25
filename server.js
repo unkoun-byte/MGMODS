@@ -3,6 +3,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs').promises;
 const fsSync = require('fs');
+const os = require('os');
 const { put, del, head } = require('@vercel/blob');
 require('dotenv').config();
 
@@ -11,12 +12,17 @@ const app = express();
 // Allow configuring the metadata path via env; default to "mods.json" at repo root.
 const METADATA_PATH = process.env.METADATA_PATH || 'mods.json';
 const LOCAL_METADATA_FILE = path.join(__dirname, 'mods.json');
+const TMP_METADATA_FILE = path.join(os.tmpdir(), 'mgmods_mods.json');
 
 const upload = multer({ storage: multer.memoryStorage() });
 
 app.use(express.static(path.join(__dirname, 'public')));
 // Serve local uploads if blob storage is not used or as a fallback
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+// Serve uploads from project uploads folder if writable, and also from system tmp as fallback
+const PROJECT_UPLOADS = path.join(__dirname, 'uploads');
+const TMP_UPLOADS = path.join(os.tmpdir(), 'mgmods_uploads');
+app.use('/uploads', express.static(PROJECT_UPLOADS));
+app.use('/uploads', express.static(TMP_UPLOADS));
 app.use(express.json());
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
@@ -40,19 +46,43 @@ async function loadMods() {
     console.error('Error loading mods from blob:', err && err.message ? err.message : err);
   }
 
-  // Fallback: load from local file system
+  // Fallback: load from local file system, or tmp metadata file
   try {
     const text = await fs.readFile(LOCAL_METADATA_FILE, 'utf8');
     return JSON.parse(text);
   } catch (err) {
-    // If local file doesn't exist, create it with empty array and return []
     if (err.code === 'ENOENT') {
-      await fs.writeFile(LOCAL_METADATA_FILE, JSON.stringify([], null, 2), 'utf8');
-      console.log('Created local mods.json at', LOCAL_METADATA_FILE);
+      // create empty local metadata file if possible
+      try {
+        await fs.writeFile(LOCAL_METADATA_FILE, JSON.stringify([], null, 2), 'utf8');
+        console.log('Created local mods.json at', LOCAL_METADATA_FILE);
+        return [];
+      } catch (e) {
+        // fallback to tmp metadata
+        await fs.writeFile(TMP_METADATA_FILE, JSON.stringify([], null, 2), 'utf8');
+        console.log('Created tmp mods.json at', TMP_METADATA_FILE);
+        return [];
+      }
+    }
+    // If reading local file failed (e.g., EROFS), try tmp metadata
+    console.error('Error reading local mods.json:', err.message || err, '- trying tmp');
+    try {
+      const text2 = await fs.readFile(TMP_METADATA_FILE, 'utf8');
+      return JSON.parse(text2);
+    } catch (e2) {
+      if (e2.code === 'ENOENT') {
+        try {
+          await fs.writeFile(TMP_METADATA_FILE, JSON.stringify([], null, 2), 'utf8');
+          console.log('Created tmp mods.json at', TMP_METADATA_FILE);
+          return [];
+        } catch (e3) {
+          console.error('Unable to create tmp mods.json:', e3 && e3.message ? e3.message : e3);
+          return [];
+        }
+      }
+      console.error('Error reading tmp mods.json:', e2 && e2.message ? e2.message : e2);
       return [];
     }
-    console.error('Error reading local mods.json:', err.message || err);
-    return [];
   }
 }
 
@@ -67,15 +97,20 @@ async function saveMods(mods) {
     console.error('Error saving mods to blob:', err && err.message ? err.message : err);
   }
 
-  // Always write local copy so the server can operate without blob access
+  // Write local copy if possible; otherwise write to tmp metadata file
   try {
     await fs.writeFile(LOCAL_METADATA_FILE, json, 'utf8');
-    // ensure file mode is readable
     try { fsSync.chmodSync(LOCAL_METADATA_FILE, 0o644); } catch (e) { /* ignore */ }
     console.log('Local mods.json updated at', LOCAL_METADATA_FILE);
   } catch (err) {
-    console.error('Error writing local mods.json:', err && err.message ? err.message : err);
-    throw err;
+    console.error('Error writing local mods.json (will try tmp):', err && err.message ? err.message : err);
+    try {
+      await fs.writeFile(TMP_METADATA_FILE, json, 'utf8');
+      console.log('Tmp mods.json updated at', TMP_METADATA_FILE);
+    } catch (err2) {
+      console.error('Error writing tmp mods.json:', err2 && err2.message ? err2.message : err2);
+      throw err2;
+    }
   }
 }
 
@@ -122,17 +157,35 @@ app.post('/upload', upload.single('file'), async (req, res) => {
     console.error('Blob upload failed, falling back to local storage:', err && err.message ? err.message : err);
   }
 
-  // Fallback: save file locally in uploads/ and register it
+  // Fallback: save file locally in uploads/ and register it (try project uploads then tmp)
   try {
-    const uploadsDir = path.join(__dirname, 'uploads');
-    await fs.mkdir(uploadsDir, { recursive: true });
     const filename = `${Date.now()}-${req.file.originalname}`.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const destPath = path.join(uploadsDir, filename);
-    await fs.writeFile(destPath, req.file.buffer);
+    // Ensure directories exist
+    try { await fs.mkdir(PROJECT_UPLOADS, { recursive: true }); } catch(e) { /* ignore */ }
+    try { await fs.mkdir(TMP_UPLOADS, { recursive: true }); } catch(e) { /* ignore */ }
+
+    const destPathProject = path.join(PROJECT_UPLOADS, filename);
+    let wroteTo = null;
+    try {
+      await fs.writeFile(destPathProject, req.file.buffer);
+      wroteTo = 'project';
+    } catch (err) {
+      // If write failed (e.g., EROFS), try tmp dir
+      console.error('Write to project uploads failed, falling back to tmp:', err && err.code ? err.code : err);
+      try {
+        const destPathTmp = path.join(TMP_UPLOADS, filename);
+        await fs.writeFile(destPathTmp, req.file.buffer);
+        wroteTo = 'tmp';
+      } catch (err2) {
+        console.error('Write to tmp uploads also failed:', err2 && err2.message ? err2.message : err2);
+        throw err2;
+      }
+    }
+
     const entry = { name, description, pathname: filename, url: `/uploads/${filename}`, downloadUrl: `/uploads/${filename}` };
     mods.push(entry);
     await saveMods(mods);
-    res.json({ message: 'Mod uploaded successfully (local)', mod: entry });
+    res.json({ message: `Mod uploaded successfully (local ${wroteTo})`, mod: entry });
   } catch (err) {
     console.error('Local upload error:', err && err.message ? err.message : err);
     res.status(500).json({ error: err && err.message ? err.message : String(err) });

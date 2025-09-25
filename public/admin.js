@@ -20,24 +20,47 @@ document.addEventListener('DOMContentLoaded', () => {
   uploadForm.addEventListener('submit', (e) => {
     e.preventDefault();
     const formData = new FormData(uploadForm);
-    fetch('/upload', {
-      method: 'POST',
-      body: formData
-    })
-      .then(response => response.json())
-      .then(data => {
+    const xhr = new XMLHttpRequest();
+    const uploadBtn = document.getElementById('upload-btn');
+    const progressBar = document.getElementById('upload-progress');
+    const percentText = document.getElementById('upload-percent');
+
+    uploadBtn.disabled = true;
+    uploadBtn.classList.add('loading');
+
+    xhr.open('POST', '/upload');
+    xhr.upload.onprogress = function (event) {
+      if (event.lengthComputable) {
+        const percent = Math.round((event.loaded / event.total) * 100);
+        progressBar.style.width = percent + '%';
+        percentText.textContent = percent + '%';
+      }
+    };
+    xhr.onload = function () {
+      uploadBtn.disabled = false;
+      uploadBtn.classList.remove('loading');
+      if (xhr.status >= 200 && xhr.status < 300) {
+        const data = JSON.parse(xhr.responseText || '{}');
         if (data.error) {
           alert(data.error);
         } else {
-          alert(data.message);
+          alert(data.message || 'Uploaded');
           uploadForm.reset();
+          progressBar.style.width = '0%';
+          percentText.textContent = '0%';
           fetchMods();
         }
-      })
-      .catch(error => {
-        console.error('Error uploading mod:', error);
-        alert('Failed to upload mod');
-      });
+      } else {
+        console.error('Upload failed', xhr.status, xhr.responseText);
+        alert('Upload failed: ' + xhr.status);
+      }
+    };
+    xhr.onerror = function () {
+      uploadBtn.disabled = false;
+      uploadBtn.classList.remove('loading');
+      alert('Network error during upload');
+    };
+    xhr.send(formData);
   });
 
   function fetchMods() {
