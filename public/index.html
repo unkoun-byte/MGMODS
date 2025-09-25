@@ -9,7 +9,27 @@
 <body>
   <header class="top-header">
     <div class="header-left"><h1 class="logo">MGMODS</h1></div>
-    <div class="header-center"><input type="text" id="search" placeholder="Search mods..."></div>
+    <div class="header-center">
+      <input type="text" id="search" placeholder="Search mods...">
+      <select id="version-filter" style="margin-left:8px">
+        <option value="all">All versions</option>
+        <option value="1.16">1.16</option>
+        <option value="1.17">1.17</option>
+        <option value="1.18">1.18</option>
+        <option value="1.19">1.19</option>
+        <option value="1.20">1.20</option>
+        <option value="1.21">1.21</option>
+      </select>
+      <select id="category-filter" style="margin-left:8px">
+        <option value="all">All categories</option>
+        <option value="mod">Mod</option>
+        <option value="modpack">Modpack</option>
+        <option value="resourcepack">Resource Pack</option>
+        <option value="texturepack">Texture Pack</option>
+        <option value="mcpack">MCPack</option>
+        <option value="maps">Maps</option>
+      </select>
+    </div>
     <div class="header-right">
       <button id="theme-toggle" class="btn-animated">Toggle Theme</button>
       <a href="/admin" class="admin-link">Admin</a>

@@ -9,8 +9,13 @@
 </head>
 <body>
   <header>
-    <h1>Admin Panel</h1>
-    <a href="/" class="back-link">Back to Home</a>
+    <div class="top-header">
+      <div class="header-left"><h1 class="logo">MGMODS Admin</h1></div>
+      <div class="header-center"></div>
+      <div class="header-right">
+        <a href="/" class="back-link">Home</a>
+      </div>
+    </div>
   </header>
   <div id="login-form">
     <input type="text" id="username" placeholder="Username">
@@ -20,9 +25,22 @@
   <div id="admin-content" style="display: none;">
     <div style="text-align:center;margin-bottom:12px;"><button id="logout-btn" class="btn-animated">Logout</button></div>
     <form id="upload-form">
-      <input type="text" name="name" placeholder="Mod Name" required>
+      <input type="text" name="name" placeholder="Name" required>
       <textarea name="description" placeholder="Description" required></textarea>
-      <input type="file" name="file" id="file-input" accept=".jar" required>
+      <label>Category
+        <select name="category" id="category-select">
+          <option value="mod">Mod</option>
+          <option value="modpack">Modpack</option>
+          <option value="resourcepack">Resource Pack</option>
+          <option value="texturepack">Texture Pack</option>
+          <option value="mcpack">MCPack</option>
+          <option value="maps">Maps</option>
+        </select>
+      </label>
+      <label>Versions (comma separated)
+        <input type="text" name="versions" id="versions-input" placeholder="e.g. 1.16,1.17,1.21">
+      </label>
+      <input type="file" name="file" id="file-input">
       <div class="upload-controls">
         <button type="submit" class="btn-animated" id="upload-btn">Upload Mod</button>
         <div class="progress-wrapper" aria-hidden="true">
@@ -31,6 +49,31 @@
         </div>
       </div>
     </form>
+    <div style="display:flex;gap:12px;align-items:center;justify-content:center;margin:12px 0;">
+      <button id="show-all-btn" class="btn-animated">Show All</button>
+      <label>Version
+        <select id="version-filter">
+          <option value="all">All</option>
+          <option value="1.16">1.16</option>
+          <option value="1.17">1.17</option>
+          <option value="1.18">1.18</option>
+          <option value="1.19">1.19</option>
+          <option value="1.20">1.20</option>
+          <option value="1.21">1.21</option>
+        </select>
+      </label>
+      <label>Category
+        <select id="category-filter">
+          <option value="all">All</option>
+          <option value="mod">Mod</option>
+          <option value="modpack">Modpack</option>
+          <option value="resourcepack">Resource Pack</option>
+          <option value="texturepack">Texture Pack</option>
+          <option value="mcpack">MCPack</option>
+          <option value="maps">Maps</option>
+        </select>
+      </label>
+    </div>
     <div id="mod-list"></div>
   </div>
   <script src="/admin.js"></script>

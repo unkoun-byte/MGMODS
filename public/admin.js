@@ -72,42 +72,82 @@ document.addEventListener('DOMContentLoaded', () => {
     xhr.send(formData);
   });
 
+  // default upload category from current filter
+  const categorySelect = document.getElementById('category-select');
+  const categoryFilter = document.getElementById('category-filter');
+  if (categoryFilter && categorySelect) {
+    categoryFilter.addEventListener('change', () => {
+      categorySelect.value = categoryFilter.value === 'all' ? 'mod' : categoryFilter.value;
+    });
+    // initialize
+    categorySelect.value = categoryFilter.value === 'all' ? 'mod' : categoryFilter.value;
+  }
+
   function fetchMods() {
     fetch('/mods')
-      .then(response => response.json())
-      .then(mods => {
-        modList.innerHTML = '';
-        mods.forEach(mod => {
-          const card = document.createElement('div');
-          card.classList.add('mod-card');
-          card.innerHTML = `
-            <h3>${mod.name}</h3>
-            <p>${mod.description}</p>
-            <a href="${mod.downloadUrl}" download class="download-btn">Download</a>
-            <button class="delete-btn" data-pathname="${mod.pathname}">Delete</button>
-          `;
-          card.querySelector('.delete-btn').addEventListener('click', (e) => {
-            const pathname = e.target.dataset.pathname;
-            if (confirm(`Are you sure you want to delete ${mod.name}?`)) {
-              fetch(`/delete/${encodeURIComponent(pathname)}`, { method: 'DELETE' })
-                .then(response => response.json())
-                .then(data => {
-                  if (data.error) {
-                    alert(data.error);
-                  } else {
-                    alert(data.message);
-                    fetchMods();
-                  }
-                })
-                .catch(error => {
-                  console.error('Error deleting mod:', error);
-                  alert('Failed to delete mod');
-                });
-            }
+    function matchesFilters(mod) {
+      const cat = document.getElementById('category-filter').value;
+      const ver = document.getElementById('version-filter').value;
+      if (cat !== 'all' && (mod.category || 'mod') !== cat) return false;
+      if (ver !== 'all') {
+        const vs = mod.versions || [];
+        if (!vs.includes(ver)) return false;
+      }
+      return true;
+    }
+
+    function fetchMods() {
+      fetch('/mods')
+        .then(response => response.json())
+        .then(data => {
+          const mods = data.results || [];
+          modList.innerHTML = '';
+          mods.filter(matchesFilters).forEach(mod => {
+            const card = document.createElement('div');
+            card.classList.add('mod-card');
+            card.innerHTML = `
+              <h3>${mod.name}</h3>
+              <p>${mod.description}</p>
+              <p><strong>Category:</strong> ${mod.category || 'mod'}</p>
+              <p><strong>Versions:</strong> ${(mod.versions || []).join(', ')}</p>
+              <a href="${mod.downloadUrl}" download class="download-btn">Download</a>
+              <button class="delete-btn" data-pathname="${mod.pathname}">Delete</button>
+            `;
+            card.querySelector('.delete-btn').addEventListener('click', (e) => {
+              const pathname = e.target.dataset.pathname;
+              if (confirm(`Are you sure you want to delete ${mod.name}?`)) {
+                fetch(`/delete/${encodeURIComponent(pathname)}`, { method: 'DELETE' })
+                  .then(response => response.json())
+                  .then(data => {
+                    if (data.error) {
+                      alert(data.error);
+                    } else {
+                      alert(data.message);
+                      fetchMods();
+                    }
+                  })
+                  .catch(error => {
+                    console.error('Error deleting mod:', error);
+                    alert('Failed to delete mod');
+                  });
+              }
+            });
+            modList.appendChild(card);
           });
-          modList.appendChild(card);
-        });
-      })
-      .catch(error => console.error('Error fetching mods:', error));
+        })
+        .catch(error => console.error('Error fetching mods:', error));
+    }
+
+    // initial load
+    fetchMods();
+
+    // Filters and controls
+    document.getElementById('version-filter').addEventListener('change', fetchMods);
+    document.getElementById('category-filter').addEventListener('change', fetchMods);
+    document.getElementById('show-all-btn').addEventListener('click', () => {
+      document.getElementById('version-filter').value = 'all';
+      document.getElementById('category-filter').value = 'all';
+      fetchMods();
+    });
   }
 });

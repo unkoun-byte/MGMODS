@@ -39,7 +39,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function fetchMods(q = '') {
     try {
-      const url = '/mods?q=' + encodeURIComponent(q) + '&limit=100';
+      const catSel = document.getElementById('category-filter');
+      const verSel = document.getElementById('version-filter');
+      const category = catSel ? catSel.value : 'all';
+      const version = verSel ? verSel.value : 'all';
+      const url = '/mods?q=' + encodeURIComponent(q) + '&limit=100&category=' + encodeURIComponent(category) + '&version=' + encodeURIComponent(version);
       const res = await fetch(url);
       if (!res.ok) throw new Error('Failed to fetch');
       const data = await res.json();
@@ -56,6 +60,11 @@ document.addEventListener('DOMContentLoaded', () => {
     if (debounceTimer) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => fetchMods(q), 250);
   });
+
+  const homepageCat = document.getElementById('category-filter');
+  const homepageVer = document.getElementById('version-filter');
+  if (homepageCat) homepageCat.addEventListener('change', () => fetchMods(searchInput.value));
+  if (homepageVer) homepageVer.addEventListener('change', () => fetchMods(searchInput.value));
 
   // initial load
   fetchMods('');
