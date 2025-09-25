@@ -5,16 +5,25 @@ document.addEventListener('DOMContentLoaded', () => {
   const modList = document.getElementById('mod-list');
   const loginBtn = document.getElementById('login-btn');
 
-  loginBtn.addEventListener('click', () => {
+  loginBtn.addEventListener('click', async () => {
     const username = document.getElementById('username').value;
     const password = document.getElementById('password').value;
-    if (username === 'AMAANE' && password === 'Amaane3grok') {
+    try {
+      const r = await fetch('/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password }) });
+      if (!r.ok) throw new Error('Invalid credentials');
       loginForm.style.display = 'none';
       adminContent.style.display = 'block';
       fetchMods();
-    } else {
-      alert('Invalid credentials');
+    } catch (err) {
+      alert('Login failed');
     }
+  });
+
+  const logoutBtn = document.getElementById('logout-btn');
+  logoutBtn.addEventListener('click', async () => {
+    await fetch('/logout', { method: 'POST' });
+    loginForm.style.display = 'block';
+    adminContent.style.display = 'none';
   });
 
   uploadForm.addEventListener('submit', (e) => {

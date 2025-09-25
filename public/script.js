@@ -19,11 +19,14 @@ document.addEventListener('DOMContentLoaded', () => {
             const card = document.createElement('div');
             card.classList.add('mod-card');
             card.innerHTML = `
-              <h3>${mod.name}</h3>
-              <p>${mod.description}</p>
+              <h3>${mod.name || mod.filename}</h3>
+              <p>${mod.description || ''}</p>
+              ${mod.downloadUrl ? `<a href='${mod.downloadUrl}' target='_blank' class='download-btn'>Download</a>` : ''}
             `;
             card.addEventListener('click', () => {
-              window.location.href = `/view/${encodeURIComponent(mod.pathname)}`;
+              if (mod.pathname) {
+                window.location.href = `/view/${encodeURIComponent(mod.pathname)}`;
+              }
             });
             modList.appendChild(card);
           });
