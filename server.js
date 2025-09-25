@@ -49,7 +49,10 @@ app.post('/login', (req, res) => {
   const { username, password } = req.body;
   if (username === ADMIN_USER && password === ADMIN_PASS) {
     const token = jwt.sign({ username }, JWT_SECRET, { expiresIn: '12h' });
-    res.cookie(authCookieName, token, { httpOnly: true, sameSite: 'lax' });
+    // secure cookie in production, reasonable maxAge
+    const cookieOpts = { httpOnly: true, sameSite: 'lax', maxAge: 12 * 60 * 60 * 1000 };
+    if (process.env.NODE_ENV === 'production') cookieOpts.secure = true;
+    res.cookie(authCookieName, token, cookieOpts);
     return res.json({ message: 'ok' });
   }
   res.status(401).json({ error: 'Invalid credentials' });
@@ -65,7 +68,7 @@ async function loadMods() {
   try {
     const metadataBlob = await head(METADATA_PATH);
     if (metadataBlob && metadataBlob.url) {
-      const response = await fetch(metadataBlob.url);
+      const response = await fetchWithRetry(metadataBlob.url, { timeout: 8000 }, 3);
       if (!response.ok) throw new Error('Failed to fetch metadata: ' + response.statusText);
       const text = await response.text();
       return JSON.parse(text);
@@ -93,6 +96,20 @@ async function loadMods() {
   }
 }
 
+// fetch with retries (exponential backoff)
+async function fetchWithRetry(url, opts = {}, retries = 3, backoff = 300) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const res = await fetch(url, opts);
+      return res;
+    } catch (err) {
+      if (i === retries - 1) throw err;
+      const wait = backoff * Math.pow(2, i);
+      await new Promise(r => setTimeout(r, wait));
+    }
+  }
+}
+
 async function saveMods(mods) {
   const json = JSON.stringify(mods, null, 2);
   // Always save to the same metadata path, do not add random suffix
@@ -105,9 +122,21 @@ app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.ht
 app.get('/admin', (req, res) => res.sendFile(path.join(__dirname, 'public', 'admin.html')));
 app.get('/mods', async (req, res) => {
   try {
-    const mods = await loadMods();
-    console.log('Fetched mods:', mods);
-    res.json(mods);
+    const q = (req.query.q || '').toLowerCase().trim();
+    const limit = Math.min(100, parseInt(req.query.limit || '50', 10) || 50);
+    const offset = Math.max(0, parseInt(req.query.offset || '0', 10) || 0);
+
+    let mods = await loadMods();
+    if (q) {
+      mods = mods.filter(m => {
+        const hay = ((m.name || '') + ' ' + (m.description || '') + ' ' + (m.pathname || '') + ' ' + (m.filename || '')).toLowerCase();
+        return hay.includes(q);
+      });
+    }
+    const total = mods.length;
+    mods = mods.slice(offset, offset + limit);
+    console.log('Fetched mods:', mods.length, 'of', total);
+    res.json({ total, limit, offset, results: mods });
   } catch (err) {
     console.error('Failed to load mods:', err && err.message ? err.message : err);
     res.status(500).json({ error: 'Failed to load mods from blob' });

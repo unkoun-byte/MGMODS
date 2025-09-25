@@ -7,10 +7,13 @@
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-  <header>
-    <h1>MGMODS</h1>
-    <input type="text" id="search" placeholder="Search mods...">
-    <a href="/admin" class="admin-link">Admin Panel</a>
+  <header class="top-header">
+    <div class="header-left"><h1 class="logo">MGMODS</h1></div>
+    <div class="header-center"><input type="text" id="search" placeholder="Search mods..."></div>
+    <div class="header-right">
+      <button id="theme-toggle" class="btn-animated">Toggle Theme</button>
+      <a href="/admin" class="admin-link">Admin</a>
+    </div>
   </header>
   <div id="mod-list"></div>
   <script src="/script.js"></script>
